@@ -1,8 +1,9 @@
 import 'dart:math';
 import 'dart:async';
-import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
+import 'package:confetti/confetti.dart';
 import 'package:ninja_fingers/const.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:ninja_fingers/extensions/random_num.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -14,6 +15,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+// Next updates : - anti-cheat (multiple tap before showing clown)
+//                - Badges, storage
+
 class _HomeScreenState extends State<HomeScreen> {
   late ConfettiController confettiController;
 
@@ -21,15 +25,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Color bgColor = Colors.white;
   String clownImage = "assets/images/clown.gif";
   String giftImage = "assets/images/gift.gif";
+  String ninjaImage = "assets/images/ninja.png";
   bool gameStarted = false;
   bool clownCatched = false;
   bool tooLate = false;
   bool gameFinished = false;
   bool clownShown = false;
+  bool eliminated = false;
   int ninjaTime = 0;
   Timer? timer;
   late String imageToShow;
   String adviceText = "";
+  Stopwatch? stopwatch;
+  int level = 0;
 
   @override
   initState() {
@@ -44,6 +52,44 @@ class _HomeScreenState extends State<HomeScreen> {
   dispose() {
     confettiController.dispose();
     super.dispose();
+  }
+
+  congratModal(int level) {
+    var levelsNames = ["Genin", "Chunin", "Hokage", "Rogue Ninja"];
+    showDialog(
+      context: context,
+      builder: ((context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Card(
+            elevation: 0,
+            child: Container(
+              padding: EdgeInsets.all(kPadding),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "Bravo ! Vous êtes un ${levelsNames[level - 1]}, niveau $level !",
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: kPadding),
+                  Image.asset("assets/images/badge-$level.png"),
+                  SizedBox(height: kPadding),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("Fermer"),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    );
   }
 
   startGame() {
@@ -72,19 +118,41 @@ class _HomeScreenState extends State<HomeScreen> {
     startGame();
   }
 
+  playDisappointmentSound() async {
+    final player = AudioPlayer();
+    await player.setUrl('asset:assets/sounds/disappointment.mp3');
+    player.play();
+  }
+
+  playApplauseSound() async {
+    final player = AudioPlayer();
+    await player.setUrl('asset:assets/sounds/applause.wav');
+    player.play();
+  }
+
   startTimer() {
+    stopwatch = Stopwatch()..start();
     timer = Timer.periodic(
-      const Duration(seconds: 1),
+      const Duration(milliseconds: 1),
       (timer) {
         setState(() {
-          ninjaTime = timer.tick;
-          if (ninjaTime >= 5) {
-            timer.cancel();
-            tooLate = true;
-            clownCatched = false;
-            gameFinished = true;
-            adviceText =
-                getAdviceText(gameStarted, clownCatched, tooLate: true);
+          ninjaTime = stopwatch!.elapsedMilliseconds;
+          if (ninjaTime >= 1300 || eliminated) {
+            if (eliminated) {
+              timer.cancel();
+              stopwatch!.stop();
+              ninjaTime = 0;
+              imageToShow = ninjaImage;
+              eliminated = false;
+            } else {
+              timer.cancel();
+              tooLate = true;
+              clownCatched = false;
+              gameFinished = true;
+              adviceText =
+                  getAdviceText(gameStarted, clownCatched, tooLate: true);
+              playDisappointmentSound();
+            }
           }
         });
       },
@@ -113,16 +181,46 @@ class _HomeScreenState extends State<HomeScreen> {
   catchClown() {
     confettiController.play();
     setState(() {
+      ninjaTime = stopwatch!.elapsedMilliseconds;
+
+      if (ninjaTime <= 100) {
+        level = 4;
+      } else if (ninjaTime > 100 && ninjaTime <= 250) {
+        level = 3;
+      } else if (ninjaTime > 250 && ninjaTime <= 450) {
+        level = 2;
+      } else if (ninjaTime > 450) {
+        level = 1;
+      }
+
+      congratModal(level);
+
+      stopwatch!.stop();
       clownCatched = true;
       gameFinished = true;
       timer!.cancel();
       adviceText = getAdviceText(gameStarted, clownCatched, win: clownCatched);
+      playApplauseSound();
     });
   }
 
   onIconClicked() {
     if (clownShown && !gameFinished) {
       catchClown();
+    } else if (!clownShown && gameStarted && !gameFinished) {
+      setState(() {
+        tooLate = false;
+        eliminated = true;
+        imageToShow = ninjaImage;
+        gameFinished = true;
+        clownCatched = true;
+        gameFinished = true;
+        gameStarted = false;
+
+        adviceText =
+            "Éliminé.e ! Vous avez frappé avant que le clown n'apparaisse.";
+      });
+      playDisappointmentSound();
     } else if (gameFinished) {
       return;
     } else {
@@ -169,67 +267,70 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      body: Stack(
-        children: [
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(height: MediaQuery.of(context).size.height / 8),
-                SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.18,
-                  child: Text(
-                    adviceText,
-                    style: const TextStyle(fontSize: 25),
-                    textAlign: TextAlign.center,
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: Stack(
+          children: [
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(height: MediaQuery.of(context).size.height / 8),
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.18,
+                    child: Text(
+                      adviceText,
+                      style: const TextStyle(fontSize: 20),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-                SizedBox(height: kPadding),
-                GestureDetector(
-                  onTap: () {
-                    onIconClicked();
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: Image.asset(imageToShow),
+                  SizedBox(height: kPadding),
+                  GestureDetector(
+                    onTap: () {
+                      onIconClicked();
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: Image.asset(imageToShow),
+                    ),
                   ),
-                ),
-                SizedBox(height: kPadding),
-                gameFinished
-                    ? ElevatedButton(
-                        onPressed: () {
-                          setState(() {
-                            tooLate = false;
-                            bgColor = Colors.white;
-                            clownCatched = false;
-                            gameStarted = false;
-                            clownShown = false;
-                            gameFinished = false;
-                            imageToShow = giftImage;
-                            adviceText =
-                                getAdviceText(gameStarted, clownCatched);
-                          });
-                        },
-                        child: const Text("Recommencer"),
-                      )
-                    : Container(),
-                const Spacer(),
-              ],
+                  SizedBox(height: kPadding),
+                  gameFinished
+                      ? ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              tooLate = false;
+                              bgColor = Colors.white;
+                              clownCatched = false;
+                              gameStarted = false;
+                              clownShown = false;
+                              gameFinished = false;
+                              imageToShow = giftImage;
+                              adviceText =
+                                  getAdviceText(gameStarted, clownCatched);
+                            });
+                          },
+                          child: const Text("Recommencer"),
+                        )
+                      : Container(),
+                  const Spacer(),
+                ],
+              ),
             ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: ConfettiWidget(
-              confettiController: confettiController,
-              blastDirection: -pi / 2,
-              emissionFrequency: 0.01,
-              numberOfParticles: 20,
-              maxBlastForce: 100,
-              minBlastForce: 80,
-              gravity: 0.3,
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: ConfettiWidget(
+                confettiController: confettiController,
+                blastDirection: -pi / 2,
+                emissionFrequency: 0.01,
+                numberOfParticles: 20,
+                maxBlastForce: 100,
+                minBlastForce: 80,
+                gravity: 0.3,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
