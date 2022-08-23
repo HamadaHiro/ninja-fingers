@@ -2,6 +2,10 @@
 
 A new Flutter project.
 
+---
+Before cloning or looking the code, let me explain you the origin of this repo. Before learning flutter state management, I wanted to understand why will I need it. For that, I started with this little game that have many interactions. After coding the app, I find some bugs and difficulties to organize the app. I started to learn state management in Flutter with the [provider package](https://pub.dev/packages/provider). To understand the concept, I created a new repo with an shoping app. [Visit the repo](https://github.com/HamadaHiro/flutter-state-management-with-provider), clone it to understand how it works !
+---
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
